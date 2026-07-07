@@ -262,8 +262,18 @@ export default function App() {
 
   // Excel Export Handler
   const handleExportToExcel = () => {
+    // Sort records by serial number in ascending order (from 1 to end)
+    const sortedRecords = [...records].sort((a, b) => {
+      const numA = parseInt(a.serialNo.replace(/\D/g, ''), 10);
+      const numB = parseInt(b.serialNo.replace(/\D/g, ''), 10);
+      if (!isNaN(numA) && !isNaN(numB)) {
+        return numA - numB;
+      }
+      return a.serialNo.localeCompare(b.serialNo, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
     // Reorder and format key names for the final spreadsheet
-    const formattedData = records.map((r, index) => ({
+    const formattedData = sortedRecords.map((r, index) => ({
       'S.No.': index + 1,
       'Date': r.date || '',
       'Serial Number': r.serialNo,
