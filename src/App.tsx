@@ -29,58 +29,10 @@ interface TransportRecord {
   netAmount: number;
 }
 
-// Initial sample data for demonstration and easy testing
-const SAMPLE_RECORDS: TransportRecord[] = [
-  {
-    id: '1',
-    serialNo: 'S001',
-    vehicleNumber: 'MH-12-PQ-8742',
-    numberOfBags: 120,
-    totalWeight: 6000,
-    buyerAddress: '102 Industrial Area, Phase-I, Pune',
-    rstNumber: 'RST-9082',
-    billNumber: 'B-2026-001',
-    netAmount: 180000
-  },
-  {
-    id: '2',
-    serialNo: 'S002',
-    vehicleNumber: 'HR-55-AX-4321',
-    numberOfBags: 250,
-    totalWeight: 12500,
-    buyerAddress: 'Warehouse 4, Plot 89, Sector 24, Gurgaon',
-    rstNumber: 'RST-7741',
-    billNumber: 'B-2026-002',
-    netAmount: 375000
-  },
-  {
-    id: '3',
-    serialNo: 'S003',
-    vehicleNumber: 'KA-03-MM-5566',
-    numberOfBags: 80,
-    totalWeight: 4000,
-    buyerAddress: 'Outer Ring Road, Bellandur, Bangalore',
-    rstNumber: 'RST-8109',
-    billNumber: 'B-2026-003',
-    netAmount: 120000
-  },
-  {
-    id: '4',
-    serialNo: 'S004',
-    vehicleNumber: 'GJ-01-ZZ-9911',
-    numberOfBags: 300,
-    totalWeight: 15000,
-    buyerAddress: 'GIDC Estate, Phase-II, Vatva, Ahmedabad',
-    rstNumber: 'RST-6512',
-    billNumber: 'B-2026-004',
-    netAmount: 450000
-  }
-];
-
 export default function App() {
-  // Load initial data from localStorage, or use SAMPLE_RECORDS if empty
+  // Load initial data from localStorage, or use empty array if empty
   const [records, setRecords] = useState<TransportRecord[]>(() => {
-    const saved = localStorage.getItem('transport_records');
+    const saved = localStorage.getItem('transport_records_v2');
     if (saved) {
       try {
         return JSON.parse(saved);
@@ -88,12 +40,12 @@ export default function App() {
         console.error('Failed to parse saved records', e);
       }
     }
-    return SAMPLE_RECORDS;
+    return [];
   });
 
   // Save to localStorage when records change
   useEffect(() => {
-    localStorage.setItem('transport_records', JSON.stringify(records));
+    localStorage.setItem('transport_records_v2', JSON.stringify(records));
   }, [records]);
 
   // Form State
@@ -209,7 +161,7 @@ export default function App() {
     const payload: TransportRecord = {
       id: editingRecord ? editingRecord.id : Date.now().toString(),
       serialNo: serialNo.trim(),
-      vehicleNumber: vehicleNumber.trim().toUpperCase(),
+      vehicleNumber: vehicleNumber.replace(/-/g, '').trim().toUpperCase(),
       numberOfBags: parseInt(numberOfBags),
       totalWeight: parseFloat(totalWeight),
       buyerAddress: buyerAddress.trim(),
@@ -606,9 +558,9 @@ export default function App() {
                       type="text" 
                       id="vehicleNumber"
                       value={vehicleNumber}
-                      onChange={(e) => setVehicleNumber(e.target.value)}
+                      onChange={(e) => setVehicleNumber(e.target.value.replace(/-/g, ''))}
                       className={errors.vehicleNumber ? 'invalid' : ''}
-                      placeholder="e.g. MH-12-PQ-8742"
+                      placeholder="e.g. MH12PQ8742"
                     />
                     {errors.vehicleNumber && <span className="error-msg">{errors.vehicleNumber}</span>}
                   </div>
