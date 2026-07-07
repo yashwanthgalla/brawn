@@ -14,12 +14,14 @@ import {
   ChevronLeft, 
   ChevronRight,
   TrendingUp,
-  AlertCircle
+  AlertCircle,
+  Calendar
 } from 'lucide-react';
 
 interface TransportRecord {
   id: string; // Unique internal ID
   serialNo: string;
+  date: string; // YYYY-MM-DD format
   vehicleNumber: string;
   numberOfBags: number;
   totalWeight: number;
@@ -29,13 +31,59 @@ interface TransportRecord {
   netAmount: number;
 }
 
+// Date helper functions
+const getLocalDateString = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatDateShort = (dateStr: string) => {
+  if (!dateStr) return 'N/A';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString(undefined, { 
+      month: 'short', 
+      day: 'numeric', 
+      year: 'numeric' 
+    });
+  } catch {
+    return dateStr;
+  }
+};
+
+const formatDateLong = (dateStr: string) => {
+  if (!dateStr) return 'No Date';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString(undefined, { 
+      weekday: 'long', 
+      month: 'long', 
+      day: 'numeric', 
+      year: 'numeric' 
+    });
+  } catch {
+    return dateStr;
+  }
+};
+
 export default function App() {
   // Load initial data from localStorage, or use empty array if empty
   const [records, setRecords] = useState<TransportRecord[]>(() => {
     const saved = localStorage.getItem('transport_records_v2');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.map((r: any) => ({
+            ...r,
+            date: r.date || getLocalDateString()
+          }));
+        }
       } catch (e) {
         console.error('Failed to parse saved records', e);
       }
@@ -54,6 +102,7 @@ export default function App() {
   
   // Form fields state
   const [serialNo, setSerialNo] = useState('');
+  const [date, setDate] = useState('');
   const [vehicleNumber, setVehicleNumber] = useState('');
   const [numberOfBags, setNumberOfBags] = useState('');
   const [totalWeight, setTotalWeight] = useState('');
@@ -67,10 +116,11 @@ export default function App() {
 
   // Search & Sorting & Pagination State
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortField, setSortField] = useState<keyof TransportRecord>('serialNo');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [sortField, setSortField] = useState<keyof TransportRecord>('date');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
+  const [groupByDate, setGroupByDate] = useState(true);
 
   // Delete Confirmation State
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -79,6 +129,7 @@ export default function App() {
   const handleEditClick = (record: TransportRecord) => {
     setEditingRecord(record);
     setSerialNo(record.serialNo);
+    setDate(record.date || getLocalDateString());
     setVehicleNumber(record.vehicleNumber);
     setNumberOfBags(record.numberOfBags.toString());
     setTotalWeight(record.totalWeight.toString());
@@ -105,6 +156,7 @@ export default function App() {
       }
     }
     setSerialNo(nextSerial);
+    setDate(getLocalDateString());
     setVehicleNumber('');
     setNumberOfBags('');
     setTotalWeight('');
@@ -121,6 +173,7 @@ export default function App() {
     const newErrors: Partial<Record<keyof Omit<TransportRecord, 'id'>, string>> = {};
 
     if (!serialNo.trim()) newErrors.serialNo = 'Serial No is required';
+    if (!date.trim()) newErrors.date = 'Date is required';
     if (!vehicleNumber.trim()) newErrors.vehicleNumber = 'Vehicle Number is required';
     
     const bags = parseInt(numberOfBags);
@@ -161,6 +214,7 @@ export default function App() {
     const payload: TransportRecord = {
       id: editingRecord ? editingRecord.id : Date.now().toString(),
       serialNo: serialNo.trim(),
+      date: date.trim(),
       vehicleNumber: vehicleNumber.replace(/-/g, '').trim().toUpperCase(),
       numberOfBags: parseInt(numberOfBags),
       totalWeight: parseFloat(totalWeight),
@@ -211,6 +265,7 @@ export default function App() {
     // Reorder and format key names for the final spreadsheet
     const formattedData = records.map((r, index) => ({
       'S.No.': index + 1,
+      'Date': r.date || '',
       'Serial Number': r.serialNo,
       'Vehicle Number': r.vehicleNumber,
       'Number of Bags': r.numberOfBags,
@@ -252,13 +307,28 @@ export default function App() {
         r.buyerAddress.toLowerCase().includes(term) ||
         r.billNumber.toLowerCase().includes(term) ||
         r.rstNumber.toLowerCase().includes(term) ||
-        r.serialNo.toLowerCase().includes(term)
+        r.serialNo.toLowerCase().includes(term) ||
+        (r.date && r.date.toLowerCase().includes(term))
       );
     });
   }, [records, searchTerm]);
 
   const sortedRecords = useMemo(() => {
     return [...filteredRecords].sort((a, b) => {
+      if (groupByDate) {
+        // Grouping: Sort primarily by date
+        const dateA = a.date || '';
+        const dateB = b.date || '';
+        if (dateA !== dateB) {
+          if (sortField === 'date') {
+            return sortDirection === 'asc' 
+              ? dateA.localeCompare(dateB) 
+              : dateB.localeCompare(dateA);
+          }
+          return dateB.localeCompare(dateA); // Default: newest first
+        }
+      }
+
       let valA = a[sortField];
       let valB = b[sortField];
 
@@ -268,13 +338,13 @@ export default function App() {
       }
 
       // Handle string sort
-      const strA = valA.toString().toLowerCase();
-      const strB = valB.toString().toLowerCase();
+      const strA = valA ? valA.toString().toLowerCase() : '';
+      const strB = valB ? valB.toString().toLowerCase() : '';
       if (strA < strB) return sortDirection === 'asc' ? -1 : 1;
       if (strA > strB) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [filteredRecords, sortField, sortDirection]);
+  }, [filteredRecords, sortField, sortDirection, groupByDate]);
 
   // Paginated Records
   const paginatedRecords = useMemo(() => {
@@ -382,7 +452,16 @@ export default function App() {
               aria-label="Search records"
             />
           </div>
-          <div className="toolbar-actions">
+          <div className="toolbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <label className="toggle-container">
+              <input 
+                type="checkbox" 
+                checked={groupByDate}
+                onChange={(e) => setGroupByDate(e.target.checked)}
+              />
+              <span className="toggle-slider"></span>
+              <span className="toggle-label">Group by Date</span>
+            </label>
             {searchTerm && (
               <span className="badge badge-neutral">
                 Found {sortedRecords.length} records
@@ -397,6 +476,11 @@ export default function App() {
             <table className="data-table">
               <thead>
                 <tr>
+                  {!groupByDate && (
+                    <th onClick={() => handleSort('date')}>
+                      Date {sortField === 'date' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
+                    </th>
+                  )}
                   <th onClick={() => handleSort('serialNo')}>
                     Serial No {sortField === 'serialNo' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
                   </th>
@@ -425,48 +509,75 @@ export default function App() {
                 </tr>
               </thead>
               <tbody>
-                {paginatedRecords.map((record) => (
-                  <tr key={record.id}>
-                    <td>
-                      <span className="badge badge-neutral">{record.serialNo}</span>
-                    </td>
-                    <td style={{ fontWeight: '600', letterSpacing: '0.05em' }}>
-                      {record.vehicleNumber}
-                    </td>
-                    <td>{record.numberOfBags.toLocaleString()}</td>
-                    <td>{record.totalWeight.toLocaleString()} kg</td>
-                    <td style={{ maxHeight: '3rem', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={record.buyerAddress}>
-                      {record.buyerAddress}
-                    </td>
-                    <td>
-                      <span className="badge badge-info">{record.rstNumber}</span>
-                    </td>
-                    <td>{record.billNumber}</td>
-                    <td style={{ fontWeight: '600' }}>
-                      ${record.netAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </td>
-                    <td>
-                      <div className="action-buttons">
-                        <button 
-                          className="btn-action btn-action-edit"
-                          onClick={() => handleEditClick(record)}
-                          title="Edit Record"
-                          aria-label={`Edit record ${record.serialNo}`}
-                        >
-                          <Edit size={16} />
-                        </button>
-                        <button 
-                          className="btn-action btn-action-delete"
-                          onClick={() => setDeleteConfirmId(record.id)}
-                          title="Delete Record"
-                          aria-label={`Delete record ${record.serialNo}`}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {(() => {
+                  let lastDate = '';
+                  const totalCols = groupByDate ? 9 : 10;
+                  return paginatedRecords.map((record) => {
+                    const showDateHeader = groupByDate && record.date !== lastDate;
+                    if (showDateHeader) {
+                      lastDate = record.date;
+                    }
+                    return (
+                      <React.Fragment key={record.id}>
+                        {showDateHeader && (
+                          <tr className="date-group-header-row">
+                            <td colSpan={totalCols}>
+                              <div className="date-group-header-content">
+                                <Calendar size={16} className="date-group-icon" />
+                                <span>{formatDateLong(record.date)}</span>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        <tr>
+                          {!groupByDate && (
+                            <td style={{ fontWeight: '500' }}>
+                              {formatDateShort(record.date)}
+                            </td>
+                          )}
+                          <td>
+                            <span className="badge badge-neutral">{record.serialNo}</span>
+                          </td>
+                          <td style={{ fontWeight: '600', letterSpacing: '0.05em' }}>
+                            {record.vehicleNumber}
+                          </td>
+                          <td>{record.numberOfBags.toLocaleString()}</td>
+                          <td>{record.totalWeight.toLocaleString()} kg</td>
+                          <td style={{ maxHeight: '3rem', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={record.buyerAddress}>
+                            {record.buyerAddress}
+                          </td>
+                          <td>
+                            <span className="badge badge-info">{record.rstNumber}</span>
+                          </td>
+                          <td>{record.billNumber}</td>
+                          <td style={{ fontWeight: '600' }}>
+                            ${record.netAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </td>
+                          <td>
+                            <div className="action-buttons">
+                              <button 
+                                className="btn-action btn-action-edit"
+                                onClick={() => handleEditClick(record)}
+                                title="Edit Record"
+                                aria-label={`Edit record ${record.serialNo}`}
+                              >
+                                <Edit size={16} />
+                              </button>
+                              <button 
+                                className="btn-action btn-action-delete"
+                                onClick={() => setDeleteConfirmId(record.id)}
+                                title="Delete Record"
+                                aria-label={`Delete record ${record.serialNo}`}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      </React.Fragment>
+                    );
+                  });
+                })()}
               </tbody>
             </table>
           ) : (
@@ -549,6 +660,19 @@ export default function App() {
                       placeholder="e.g. S-101"
                     />
                     {errors.serialNo && <span className="error-msg">{errors.serialNo}</span>}
+                  </div>
+
+                  {/* Date */}
+                  <div className="form-group">
+                    <label htmlFor="date">Date *</label>
+                    <input 
+                      type="date" 
+                      id="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      className={errors.date ? 'invalid' : ''}
+                    />
+                    {errors.date && <span className="error-msg">{errors.date}</span>}
                   </div>
 
                   {/* Vehicle Number */}
